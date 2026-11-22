@@ -1,0 +1,25 @@
+﻿# PyInstaller & Inno Setup build outputs
+build/
+dist/
+installer_output/
+*.exe
+*.spec
+
+# Python cache & virtual environments
+__pycache__/
+*.py[cod]
+*.class
+.venv/
+venv/
+env/
+
+# Local user runtime settings & temporary files
+settings.json
+*.tmp
+
+# OS & editor clutter
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
