@@ -16,12 +16,15 @@ You can also go right click the Windows icon on the taskbar > Installed Apps > O
 Features
 
 • Comprehensive Equipment & Asset Catalog: Pre-loaded with 40+ items across 14 categories—including small arms, ammunition, grenades, artillery, ground vehicles, aircraft, fuel, provisions, uniforms, and tactical gear.
+• Quick Catalog Search: Filter across all 40+ items and categories instantly using the search bar at the top of the catalog selection panel.
+• Save & Load Operation Presets (.json): Save your configured operation details, troop counts, and equipment loadouts to a preset file and reload them anytime.
 • Smart Cost Calculation Engine (CAD):
 	• Personnel Costs: Automatically calculates troop deployment pay/allowances based on headcount and operation duration.
 	• Consumables & Gear: Tracks per-round, per-litre, per-ration, and per-unit expenditures.
 	• Capital Assets (Weapons, Vehicles & Aircraft): Separates one-time acquisition/replacement costs from active operating expenses—prorating annual weapon maintenance by operation days and calculating vehicle/aircraft wear by kilometres or flight hours.
 	• Automated Fuel Burn: Dynamically calculates JP-8 aviation fuel and F-54 diesel consumption based on vehicle distance (L/100 km) or aircraft flight hours (L/hr) using live catalog fuel prices.
 • Built-In Price Database & Item Manager ([>_]): Add custom items, edit unit prices, adjust fuel burn rates, or configure custom categories directly inside the app—changes save automatically to prices.json.
+• Dark Mode & Classic Theme Toggle: Switch between classic light mode and dark mode inside the [>_] settings menu.
 • Multi-Format Report Exporting:
 	• PDF Reports with Barcodes: Generates a landscape operation summary complete with a Code 128 linear barcode (encoding the operation number and name) and a PDF417 2D barcode (encoding the operation number and logging model).
 	• CSV & TXT Exports: Exports clean, itemized spreadsheets and plain-text breakdowns for easy sharing or archival.
@@ -37,7 +40,7 @@ How to Use
 
 2. Add Consumables, Equipment & Vehicles
 
-1. Use any dropdown under Catalog Selection by Category to pick an item.
+1. Use the Quick Search bar or any dropdown under Catalog Selection by Category to pick an item.
 2. Depending on what you selected, fill in the details that appear below:
 	• For Consumables (Ammo, Rations, Fuel, Gear): Enter the Quantity expended and click Add Item.
 	• For Weapons, Vehicles & Aircraft:
@@ -46,16 +49,17 @@ How to Use
 		• Usage (Fleet km / Flight Hours / Shots): Total combined distance, flight time, or full-charge shots across the fleet. Fuel costs are added automatically.
 3. Click Add Asset to add the line item to the breakdown table. (To remove a mistake, highlight the row(s) in the table and click Remove Selected).
 
-3. Calculate & Export
+3. Save, Load, Calculate & Export
 
 1. Click Calculate at the bottom-left to compute subtotals and the Grand Total in the Cost Summary box.
 2. Click Export and choose .pdf, .csv, or .txt to save your report.
+3. Click Save Operation to save your current operation and item list to a .json preset file, or Load Operation to restore a saved setup later.
 
 4. Customize Prices & Settings ([>_])
 
 • Click the [>_] button in the bottom-right corner to open the Price Database & Item Manager.
 • Select any existing item to update its price, operating rate, or fuel burn—or fill out the fields and click Add to Catalog to create your own equipment.
-• You can also change the Logging Model version at the bottom of the manager window (saved in settings.json and embedded into exported PDF417 barcodes).
+• At the bottom of the manager window, you can switch the Theme between light and dark mode, or change the Logging Model version (saved in settings.json and embedded into exported PDF417 barcodes).
 
 
 Disclaimer & Legal Notice
