@@ -6,6 +6,8 @@ Install PDF export dependencies with: python -m pip install reportlab pdf417gen 
 import csv
 import json
 import os
+import shutil
+import sys
 import tkinter as tk
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from tkinter import filedialog, messagebox, ttk
@@ -127,7 +129,29 @@ SELECTION_CATEGORIES = (
 
 SELECTION_FIELDS = SELECTION_CATEGORIES + ("Other / Custom",)
 CATEGORIES = SELECTION_CATEGORIES + ("Other",)
-DEFAULT_LOGGING_MODEL = "1.0.01"
+DEFAULT_LOGGING_MODEL = "1.0.02"
+
+
+def bundled_path(filename):
+    """Locate read-only bundled assets inside PyInstaller (_MEIPASS) or source dir."""
+    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, filename)
+
+
+def user_data_path(filename, seed_from_bundle=False):
+    """Store writable user data in AppData (Windows) or ~/.config (Linux)."""
+    if sys.platform.startswith("win"):
+        base = os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))
+    else:
+        base = os.path.join(os.path.expanduser("~"), ".config")
+    data_dir = os.path.join(base, "OperationCostCalculator")
+    os.makedirs(data_dir, exist_ok=True)
+    target = os.path.join(data_dir, filename)
+    if seed_from_bundle and not os.path.exists(target):
+        source = bundled_path(filename)
+        if os.path.exists(source):
+            shutil.copy2(source, target)
+    return target
 
 
 def money(value):
@@ -152,40 +176,37 @@ class OperationCostCalculator:
         self.root.title("Operation Cost Calculator")
         self.root.minsize(1000, 800)
 
-        self.icon_path = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "moneycalc.ico"
-        )
-        self.icon_image_path = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "moneycalc.png"
-        )
-        self.icon_image = tk.PhotoImage(
-            master=self.root, file=self.icon_image_path
-        )
-        self.root.iconphoto(True, self.icon_image)
-        self.root.iconbitmap(self.icon_path)
-        self.root.iconbitmap(default=self.icon_path)
-        self.catalog_path = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "prices.json"
-        )
-        self.settings_path = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "settings.json"
-        )
-        self.logo_path = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "canadian_army_logo.png"
-        )
+        self.icon_path = bundled_path("moneycalc.ico")
+        self.icon_image_path = bundled_path("moneycalc.png")
+        self.logo_path = bundled_path("canadian_army_logo.png")
+        if os.path.exists(self.icon_image_path):
+            self.icon_image = tk.PhotoImage(
+                master=self.root, file=self.icon_image_path
+            )
+            self.root.iconphoto(True, self.icon_image)
+        if sys.platform.startswith("win") and os.path.exists(self.icon_path):
+            self.root.iconbitmap(self.icon_path)
+            self.root.iconbitmap(default=self.icon_path)
+
+        self.catalog_path = user_data_path("prices.json", seed_from_bundle=True)
+        self.settings_path = user_data_path("settings.json", seed_from_bundle=False)
+        self.settings = self._load_settings()
+        self.logging_model = self.settings["logging_model"]
+        self.theme_mode = self.settings["theme"]
         self.catalog = self._load_catalog()
-        self.logging_model = self._load_settings()
         self.operation_items = []
         self.next_item_id = 0
         self.manager_window = None
+        self.last_summary = None
 
-        self._configure_style()
+        self._apply_theme(self.theme_mode)
         self._build_main_window()
         self._refresh_item_choices()
 
     def _load_settings(self):
+        defaults = {"logging_model": DEFAULT_LOGGING_MODEL, "theme": "light"}
         if not os.path.exists(self.settings_path):
-            return DEFAULT_LOGGING_MODEL
+            return defaults
         try:
             with open(self.settings_path, "r", encoding="utf-8") as settings_file:
                 data = json.load(settings_file)
@@ -196,17 +217,40 @@ class OperationCostCalculator:
                 or not model.isascii()
                 or not model.isprintable()
             ):
-                raise ValueError(
-                    "The logging model must be 1-32 printable ASCII characters."
-                )
-            return model
+                model = DEFAULT_LOGGING_MODEL
+            theme = str(data.get("theme", "light")).strip().lower()
+            if theme not in ("light", "dark"):
+                theme = "light"
+            return {"logging_model": model, "theme": theme}
         except (OSError, json.JSONDecodeError, AttributeError, ValueError) as exc:
             messagebox.showerror(
                 "Settings Error",
-                "Could not load settings.json. The default logging model will be used.\n\n"
+                "Could not load settings.json. Default settings will be used.\n\n"
                 "{}".format(exc),
             )
-            return DEFAULT_LOGGING_MODEL
+            return defaults
+
+    def _write_settings(self):
+        temporary_path = self.settings_path + ".tmp"
+        try:
+            with open(temporary_path, "w", encoding="utf-8") as settings_file:
+                json.dump(
+                    {
+                        "logging_model": self.logging_model,
+                        "theme": self.theme_mode,
+                    },
+                    settings_file,
+                    indent=2,
+                )
+                settings_file.write("\n")
+            os.replace(temporary_path, self.settings_path)
+        except OSError:
+            if os.path.exists(temporary_path):
+                try:
+                    os.remove(temporary_path)
+                except OSError:
+                    pass
+            raise
 
     def save_logging_model(self):
         model = self.logging_model_var.get().strip()
@@ -222,40 +266,89 @@ class OperationCostCalculator:
                 parent=self.manager_window,
             )
             return
-
-        temporary_path = self.settings_path + ".tmp"
+        self.logging_model = model
+        self.theme_mode = self.theme_var.get()
         try:
-            with open(temporary_path, "w", encoding="utf-8") as settings_file:
-                json.dump({"logging_model": model}, settings_file, indent=2)
-                settings_file.write("\n")
-            os.replace(temporary_path, self.settings_path)
+            self._write_settings()
         except OSError as exc:
-            if os.path.exists(temporary_path):
-                try:
-                    os.remove(temporary_path)
-                except OSError:
-                    pass
             messagebox.showerror(
                 "Settings Save Error",
                 "Could not save settings.json:\n{}".format(exc),
                 parent=self.manager_window,
             )
             return
-
-        self.logging_model = model
+        self._apply_theme(self.theme_mode)
         messagebox.showinfo(
             "Settings Saved",
-            "Logging model set to {}.".format(model),
+            "Settings updated (Model: {}, Theme: {}).".format(
+                self.logging_model, self.theme_mode.title()
+            ),
             parent=self.manager_window,
         )
 
-    def _configure_style(self):
+    def _apply_theme(self, mode):
         style = ttk.Style(self.root)
         if "clam" in style.theme_names():
             style.theme_use("clam")
-        style.configure("Treeview", rowheight=25)
-        style.configure("Treeview.Heading", font=("", 9, "bold"))
-        style.configure("Total.TLabel", font=("", 11, "bold"))
+        if mode == "dark":
+            bg = "#1e1e1e"
+            panel = "#252526"
+            field = "#2d2d30"
+            fg = "#e6e6e6"
+            accent = "#334b68"
+            select_bg = "#3e5c80"
+        else:
+            bg = "#f0f0f0"
+            panel = "#f0f0f0"
+            field = "#ffffff"
+            fg = "#000000"
+            accent = "#e1e1e1"
+            select_bg = "#334b68"
+        self.root.configure(bg=bg)
+        style.configure(".", background=panel, foreground=fg)
+        style.configure("TFrame", background=panel)
+        style.configure("TLabelframe", background=panel, foreground=fg)
+        style.configure("TLabelframe.Label", background=panel, foreground=fg)
+        style.configure("TLabel", background=panel, foreground=fg)
+        style.configure("TButton", background=accent, foreground=fg)
+        style.configure(
+            "TEntry",
+            fieldbackground=field,
+            foreground=fg,
+            insertcolor=fg,
+        )
+        style.configure(
+            "TCombobox",
+            fieldbackground=field,
+            background=accent,
+            foreground=fg,
+            selectbackground=select_bg,
+            selectforeground="#ffffff",
+        )
+        style.map(
+            "TCombobox",
+            fieldbackground=[("readonly", field)],
+            foreground=[("readonly", fg)],
+        )
+        style.configure(
+            "Treeview",
+            background=field,
+            fieldbackground=field,
+            foreground=fg,
+            rowheight=25,
+        )
+        style.configure(
+            "Treeview.Heading",
+            background=accent,
+            foreground=fg,
+            font=("", 9, "bold"),
+        )
+        style.map("Treeview", background=[("selected", select_bg)])
+        style.configure(
+            "Total.TLabel", font=("", 11, "bold"), background=panel, foreground=fg
+        )
+        if self.manager_window is not None and self.manager_window.winfo_exists():
+            self.manager_window.configure(bg=bg)
 
     def _load_catalog(self):
         if not os.path.exists(self.catalog_path):
@@ -268,13 +361,11 @@ class OperationCostCalculator:
                     "Could not create prices.json:\n{}".format(exc),
                 )
             return catalog
-
         try:
             with open(self.catalog_path, "r", encoding="utf-8") as catalog_file:
                 data = json.load(catalog_file)
             if not isinstance(data, list):
                 raise ValueError("The catalog must contain a list of items.")
-
             catalog = []
             seen_names = set()
             catalog_changed = False
@@ -386,7 +477,6 @@ class OperationCostCalculator:
                 if normalized != entry:
                     catalog_changed = True
                 catalog.append(normalized)
-
             catalog_indexes = {
                 item["name"].casefold(): index
                 for index, item in enumerate(catalog)
@@ -405,7 +495,6 @@ class OperationCostCalculator:
                 if migrated_preset != catalog[existing_index]:
                     catalog[existing_index] = migrated_preset
                     catalog_changed = True
-
             catalog_by_name = {
                 item["name"]: item for item in catalog
             }
@@ -421,7 +510,6 @@ class OperationCostCalculator:
                             "Fuel price item '{}' must exist as a consumable billed "
                             "per litre.".format(item["fuel_item"])
                         )
-
             if catalog_changed:
                 try:
                     self._write_catalog(catalog)
@@ -440,7 +528,6 @@ class OperationCostCalculator:
                 "for this session.\n\n{}".format(exc),
             )
             return [dict(item) for item in DEFAULT_CATALOG]
-
     def _write_catalog(self, catalog):
         temporary_path = self.catalog_path + ".tmp"
         try:
@@ -455,7 +542,6 @@ class OperationCostCalculator:
                 except OSError:
                     pass
             raise
-
     @staticmethod
     def _parse_nonnegative_decimal(value, label):
         try:
@@ -467,7 +553,6 @@ class OperationCostCalculator:
         if number < 0:
             raise ValueError("{} cannot be negative.".format(label))
         return number
-
     @staticmethod
     def _parse_nonnegative_integer(value, label):
         try:
@@ -477,14 +562,12 @@ class OperationCostCalculator:
         if number < 0:
             raise ValueError("{} cannot be negative.".format(label))
         return number
-
     @staticmethod
     def _parse_operation_number(value):
         operation_number = str(value).strip()
         if not operation_number or not operation_number.isascii() or not operation_number.isdigit():
             raise ValueError("Operation Number must contain digits only.")
         return operation_number
-
     def _build_main_window(self):
         container = ttk.Frame(self.root, padding=12)
         container.grid(row=0, column=0, sticky="nsew")
@@ -499,7 +582,7 @@ class OperationCostCalculator:
         header.columnconfigure(0, weight=1)
         ttk.Label(
             header,
-            text="Operation Cost Calculator",
+            text="Operation Calculator",
             font=("TkDefaultFont", 16, "bold"),
         ).grid(row=0, column=0, sticky="w")
         self.logo_image = tk.PhotoImage(
@@ -533,7 +616,6 @@ class OperationCostCalculator:
         ttk.Entry(details, textvariable=self.operation_number, width=12).grid(
             row=0, column=5, sticky="w", pady=3
         )
-
         personnel = ttk.LabelFrame(container, text="Personnel", padding=10)
         personnel.grid(row=2, column=0, sticky="ew", pady=(0, 8))
         for column in range(4):
@@ -552,17 +634,26 @@ class OperationCostCalculator:
         ttk.Entry(personnel, textvariable=self.daily_pay, width=16).grid(
             row=0, column=3, sticky="ew", pady=3
         )
-
         selection = ttk.LabelFrame(
             container, text="Catalog Selection by Category", padding=10
         )
         selection.grid(row=3, column=0, sticky="ew", pady=(0, 8))
         for column in (1, 3):
             selection.columnconfigure(column, weight=1)
+        ttk.Label(selection, text="Quick Search:").grid(
+            row=0, column=0, sticky="w", padx=(4, 8), pady=(0, 6)
+        )
+        self.search_var = tk.StringVar()
+        self.search_combo = ttk.Combobox(selection, textvariable=self.search_var)
+        self.search_combo.grid(
+            row=0, column=1, columnspan=3, sticky="ew", padx=(0, 12), pady=(0, 6)
+        )
+        self.search_var.trace_add("write", self._on_search_typed)
+        self.search_combo.bind("<<ComboboxSelected>>", self._on_search_selected)
         self.category_selection_vars = {}
         self.category_combos = {}
         for index, category in enumerate(SELECTION_FIELDS):
-            row = index // 2
+            row = (index // 2) + 1
             label_column = 0 if index % 2 == 0 else 2
             combo_column = label_column + 1
             label_text = category
@@ -586,14 +677,13 @@ class OperationCostCalculator:
                 pady=3,
             )
             category_combo.bind(
-                "<<ComboboxSelected>>",
+            "<<ComboboxSelected>>",
                 lambda _event, selected_category=category: self._on_category_selected(
                     selected_category
                 ),
             )
             self.category_selection_vars[category] = category_var
             self.category_combos[category] = category_combo
-
         entry_frame = ttk.LabelFrame(container, text="Selected Item Details", padding=8)
         entry_frame.grid(row=4, column=0, sticky="ew", pady=(0, 8))
         entry_frame.columnconfigure(0, weight=1)
@@ -608,7 +698,6 @@ class OperationCostCalculator:
             wraplength=950,
             justify="left",
         ).grid(row=0, column=0, sticky="w", pady=(0, 6))
-
         consumable_controls = ttk.Frame(entry_frame)
         consumable_controls.grid(row=1, column=0, sticky="ew")
         consumable_controls.columnconfigure(0, weight=1)
@@ -624,7 +713,6 @@ class OperationCostCalculator:
         ).grid(row=0, column=3)
         self.consumable_controls = consumable_controls
         self.consumable_controls.grid_remove()
-
         asset_controls = ttk.Frame(entry_frame)
         asset_controls.grid(row=2, column=0, sticky="ew")
         ttk.Label(asset_controls, text="Qty to Acquire / Replace:").grid(
@@ -671,7 +759,6 @@ class OperationCostCalculator:
         self.asset_controls = asset_controls
         self.asset_controls.grid_remove()
         self.asset_detail_label.grid_remove()
-
         breakdown = ttk.LabelFrame(
             container, text="Itemized Cost Breakdown", padding=10
         )
@@ -723,7 +810,6 @@ class OperationCostCalculator:
             text="Remove Selected",
             command=self.remove_operation_items,
         ).grid(row=2, column=0, sticky="e", pady=(8, 0))
-
         results = ttk.LabelFrame(container, text="Cost Summary", padding=10)
         results.grid(row=6, column=0, sticky="ew", pady=(0, 8))
         results.columnconfigure(0, weight=1)
@@ -731,7 +817,6 @@ class OperationCostCalculator:
         ttk.Label(
             results, textvariable=self.summary_text, justify="left", anchor="nw"
         ).grid(row=0, column=0, sticky="nsew")
-
         actions = ttk.Frame(container)
         actions.grid(row=7, column=0, sticky="ew")
         ttk.Button(actions, text="Calculate", command=self.calculate).pack(
@@ -743,11 +828,47 @@ class OperationCostCalculator:
         ttk.Button(actions, text="Export", command=self.export).pack(
             side="left", padx=(0, 8)
         )
+        ttk.Button(actions, text="Save Operation", command=self.save_operation).pack(
+            side="left", padx=(0, 8)
+        )
+        ttk.Button(actions, text="Load Operation", command=self.load_operation).pack(
+            side="left", padx=(0, 8)
+        )
         ttk.Button(actions, text="[>_]", command=self.open_catalog_manager).pack(
             side="right"
         )
+    def _on_search_typed(self, *_args):
+        query = self.search_var.get().strip().casefold()
+        if not query:
+            matches = sorted((item["name"] for item in self.catalog), key=str.casefold)
+        else:
+            matches = sorted(
+                (
+                    item["name"]
+                    for item in self.catalog
+                    if query in item["name"].casefold()
+                    or query in item["category"].casefold()
+                ),
+                key=str.casefold,
+            )
+        self.search_combo["values"] = matches
 
+    def _on_search_selected(self, _event=None):
+        chosen_name = self.search_var.get().strip()
+        item = self._find_catalog_item(chosen_name)
+        if item is None:
+            return
+        target_field = (
+            item["category"]
+            if item["category"] in SELECTION_CATEGORIES
+            else "Other / Custom"
+        )
+        self.category_selection_vars[target_field].set(item["name"])
+        self._on_category_selected(target_field)
     def _refresh_item_choices(self):
+        self.search_combo["values"] = sorted(
+            (item["name"] for item in self.catalog), key=str.casefold
+        )
         for category, combo in self.category_combos.items():
             if category == "Other / Custom":
                 items = [
@@ -785,7 +906,6 @@ class OperationCostCalculator:
         for field, variable in self.category_selection_vars.items():
             variable.set(selected_name if field == category else "")
         self._on_category_selected(category)
-
     def _on_category_selected(self, category):
         selected_name = self.category_selection_vars[category].get().strip()
         if not selected_name:
@@ -794,7 +914,6 @@ class OperationCostCalculator:
         if item is None:
             self._refresh_item_choices()
             return
-
         for field, variable in self.category_selection_vars.items():
             if field != category:
                 variable.set("")
@@ -821,7 +940,6 @@ class OperationCostCalculator:
             self.asset_controls.grid()
             self.asset_detail_label.grid()
             self._update_asset_form()
-
     def add_operation_item(self):
         name = self.selected_item.get().strip()
         if not name:
@@ -836,7 +954,6 @@ class OperationCostCalculator:
             )
             self._refresh_item_choices()
             return
-
         try:
             if catalog_item["unit"].casefold() == "litre":
                 quantity = self._parse_nonnegative_decimal(
@@ -851,7 +968,6 @@ class OperationCostCalculator:
         except ValueError as exc:
             messagebox.showerror("Invalid Quantity", str(exc))
             return
-
         entry = {
             "name": catalog_item["name"],
             "category": catalog_item["category"],
@@ -873,7 +989,6 @@ class OperationCostCalculator:
         self.operation_items.append(entry)
         self._insert_operation_item(entry)
         self.summary_text.set("Select Calculate to view the breakdown.")
-
     def _insert_operation_item(self, item):
         try:
             duration = self._parse_nonnegative_integer(
@@ -911,10 +1026,8 @@ class OperationCostCalculator:
                 money(costs["total"]),
             ),
         )
-
     def _find_catalog_item(self, name):
         return next((item for item in self.catalog if item["name"] == name), None)
-
     def _update_asset_form(self, _event=None):
         item = self._find_catalog_item(self.selected_asset.get().strip())
         if item is None:
@@ -927,7 +1040,6 @@ class OperationCostCalculator:
             self.asset_activity_entry.configure(state="normal")
             self.asset_service_entry.configure(state="normal")
             return
-
         if item["operating_unit"] == "year":
             self.activity_label.set("Usage (duration-based):")
             self.asset_activity.set("0")
@@ -952,7 +1064,6 @@ class OperationCostCalculator:
             else:
                 self.asset_activity_entry.configure(state="normal")
                 self.activity_label.set("Usage:")
-
         details = "Replacement cost: {} per {}.".format(
             money(Decimal(item["price"])), item["unit"]
         )
@@ -970,7 +1081,6 @@ class OperationCostCalculator:
             "fleet activity; fuel is added separately."
         )
         self.asset_detail.set(details)
-
     def add_asset(self):
         catalog_item = self._find_catalog_item(self.selected_asset.get().strip())
         if catalog_item is None or catalog_item["kind"] == "consumable":
@@ -992,7 +1102,6 @@ class OperationCostCalculator:
         except ValueError as exc:
             messagebox.showerror("Invalid Asset Input", str(exc))
             return
-
         if quantity == 0 and service_count == 0 and activity == 0:
             messagebox.showerror(
                 "Invalid Asset Input",
@@ -1015,7 +1124,6 @@ class OperationCostCalculator:
                 "Enter positive usage for this asset, or a quantity to acquire / replace.",
             )
             return
-
         fuel_price = Decimal("0")
         if catalog_item["fuel_item"]:
             fuel = self._find_catalog_item(catalog_item["fuel_item"])
@@ -1028,7 +1136,6 @@ class OperationCostCalculator:
                 )
                 return
             fuel_price = Decimal(fuel["price"])
-
         entry = {
             "name": catalog_item["name"],
             "category": catalog_item["category"],
@@ -1050,13 +1157,11 @@ class OperationCostCalculator:
         self.operation_items.append(entry)
         self._insert_operation_item(entry)
         self.summary_text.set("Select Calculate to view the breakdown.")
-
     @staticmethod
     def _calculate_item_costs(item, duration):
         replacement = item["unit_price"] * item["quantity"]
         operating = Decimal("0")
         fuel = Decimal("0")
-
         if item["kind"] == "weapon":
             if item["operating_unit"] == "year":
                 operating = (
@@ -1074,7 +1179,6 @@ class OperationCostCalculator:
                 if item["fuel_basis"] == "100 km":
                     burn_quantity /= Decimal("100")
                 fuel = burn_quantity * item["fuel_price"]
-
         if item["kind"] == "consumable":
             replacement = item["unit_price"] * item["quantity"]
         return {
@@ -1083,7 +1187,6 @@ class OperationCostCalculator:
             "fuel": fuel,
             "total": replacement + operating + fuel,
         }
-
     def remove_operation_items(self):
         selected = self.items_tree.selection()
         if not selected:
@@ -1096,7 +1199,6 @@ class OperationCostCalculator:
         ]
         self.items_tree.delete(*selected)
         self.summary_text.set("Select Calculate to view the breakdown.")
-
     def calculate(self):
         try:
             operation_number = self._parse_operation_number(
@@ -1114,7 +1216,6 @@ class OperationCostCalculator:
         except ValueError as exc:
             messagebox.showerror("Invalid Input", str(exc))
             return
-
         personnel_total = Decimal(troops) * daily_pay * duration
         totals = {
             "consumables": Decimal("0"),
@@ -1131,7 +1232,6 @@ class OperationCostCalculator:
                 totals["operating"] += costs["operating"]
                 totals["fuel"] += costs["fuel"]
             self._update_operation_row(item, duration, costs)
-
         grand_total = personnel_total + sum(totals.values(), Decimal("0"))
         self.last_summary = {
             "personnel": personnel_total,
@@ -1157,7 +1257,6 @@ class OperationCostCalculator:
                 money(grand_total),
             )
         )
-
     def _update_operation_row(self, item, duration, costs=None):
         if costs is None:
             costs = self._calculate_item_costs(item, duration)
@@ -1191,13 +1290,13 @@ class OperationCostCalculator:
                 money(costs["total"]),
             ),
         )
-
     def reset(self):
         self.operation_name.set("")
         self.operation_number.set("")
         self.duration.set("0")
         self.troop_count.set("0")
         self.daily_pay.set("0")
+        self.search_var.set("")
         self.selected_item.set("")
         self.selected_asset.set("")
         for variable in self.category_selection_vars.values():
@@ -1217,20 +1316,116 @@ class OperationCostCalculator:
         self.items_tree.delete(*self.items_tree.get_children())
         self.summary_text.set("Select Calculate to view the breakdown.")
         self.last_summary = None
+    def save_operation(self):
+        path = filedialog.asksaveasfilename(
+            title="Save Operation Preset",
+            defaultextension=".json",
+            filetypes=(("Operation Preset JSON", "*.json"),),
+        )
+        if not path:
+            return
+        serialized_items = []
+        for item in self.operation_items:
+            serialized_items.append(
+                {
+                    "name": item["name"],
+                    "category": item["category"],
+                    "kind": item["kind"],
+                    "unit": item["unit"],
+                    "unit_price": str(item["unit_price"]),
+                    "quantity": str(item["quantity"]),
+                    "service_count": item["service_count"],
+                    "activity": str(item["activity"]),
+                    "operating_rate": str(item["operating_rate"]),
+                    "operating_unit": item["operating_unit"],
+                    "fuel_burn": str(item["fuel_burn"]),
+                    "fuel_basis": item["fuel_basis"],
+                    "fuel_item": item["fuel_item"],
+                    "fuel_price": str(item["fuel_price"]),
+                }
+            )
+        payload = {
+            "operation_name": self.operation_name.get(),
+            "operation_number": self.operation_number.get(),
+            "duration": self.duration.get(),
+            "troop_count": self.troop_count.get(),
+            "daily_pay": self.daily_pay.get(),
+            "items": serialized_items,
+        }
+        try:
+            with open(path, "w", encoding="utf-8") as handle:
+                json.dump(payload, handle, indent=2)
+                handle.write("\n")
+            messagebox.showinfo("Saved", "Operation preset saved to:\n{}".format(path))
+        except OSError as exc:
+            messagebox.showerror(
+                "Save Error", "Could not save operation:\n{}".format(exc)
+            )
 
+    def load_operation(self):
+        path = filedialog.askopenfilename(
+            title="Load Operation Preset",
+            filetypes=(("Operation Preset JSON", "*.json"),),
+        )
+        if not path:
+            return
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+            self.reset()
+            self.operation_name.set(str(payload.get("operation_name", "")))
+            self.operation_number.set(str(payload.get("operation_number", "")))
+            self.duration.set(str(payload.get("duration", "0")))
+            self.troop_count.set(str(payload.get("troop_count", "0")))
+            self.daily_pay.set(str(payload.get("daily_pay", "0")))
+            for raw in payload.get("items", []):
+                quantity = (
+                    Decimal(str(raw["quantity"]))
+                    if raw.get("unit", "").casefold() == "litre"
+                    else int(Decimal(str(raw["quantity"])))
+                )
+                entry = {
+                    "name": raw["name"],
+                    "category": raw["category"],
+                    "kind": raw["kind"],
+                    "unit": raw["unit"],
+                    "unit_price": Decimal(str(raw["unit_price"])),
+                    "quantity": quantity,
+                    "service_count": int(raw.get("service_count", 0)),
+                    "activity": Decimal(str(raw.get("activity", "0"))),
+                    "operating_rate": Decimal(str(raw.get("operating_rate", "0"))),
+                    "operating_unit": raw.get("operating_unit", ""),
+                    "fuel_burn": Decimal(str(raw.get("fuel_burn", "0"))),
+                    "fuel_basis": raw.get("fuel_basis", ""),
+                    "fuel_item": raw.get("fuel_item", ""),
+                    "fuel_price": Decimal(str(raw.get("fuel_price", "0"))),
+                    "row_id": str(self.next_item_id),
+                }
+                self.next_item_id += 1
+                self.operation_items.append(entry)
+                self._insert_operation_item(entry)
+        except (
+            OSError,
+            json.JSONDecodeError,
+            KeyError,
+            ValueError,
+            InvalidOperation,
+        ) as exc:
+            messagebox.showerror(
+                "Load Error", "Could not load operation preset:\n{}".format(exc)
+            )
     def export(self):
         try:
             self._get_calculation_data()
         except ValueError as exc:
             messagebox.showerror("Invalid Input", str(exc))
             return
-
         path = filedialog.asksaveasfilename(
             title="Export Operation Cost Report",
             defaultextension=".pdf",
             filetypes=(
-                ("PDF report with barcodes", "*.pdf"),
-                ("CSV files", "*.csv"),
+("PDF report with barcodes", "*.pdf"),
+("CSV files", "*.csv"),
                 ("Text files", "*.txt"),
             ),
         )
@@ -1249,7 +1444,6 @@ class OperationCostCalculator:
             messagebox.showerror("Export Error", "Could not save the export:\n{}".format(exc))
             return
         messagebox.showinfo("Export Complete", "Breakdown saved to:\n{}".format(path))
-
     def _get_calculation_data(self):
         operation_name = self.operation_name.get().strip()
         if not operation_name:
@@ -1285,7 +1479,6 @@ class OperationCostCalculator:
                 totals["fuel"] += costs["fuel"]
         totals["grand_total"] = sum(totals.values(), Decimal("0"))
         return operation_name, operation_number, duration, troops, totals, line_costs
-
     def _export_text(self, path):
         operation_name, operation_number, duration, troops, totals, line_costs = (
             self._get_calculation_data()
@@ -1337,9 +1530,11 @@ class OperationCostCalculator:
                 output.write("No equipment or capital asset entries.\n")
             output.write("\nPersonnel subtotal: {}\n".format(money(totals["personnel"])))
             output.write("Consumables & gear: {}\n".format(money(totals["consumables"])))
-            output.write("Capital replacement / acquisition: {}\n".format(
+            output.write(
+                "Capital replacement / acquisition: {}\n".format(
                 money(totals["replacement"])
-            ))
+                )
+            )
             output.write("Asset operating costs: {}\n".format(money(totals["operating"])))
             output.write("Fuel: {}\n".format(money(totals["fuel"])))
             output.write("Grand Total: {}\n".format(money(totals["grand_total"])))
@@ -1382,7 +1577,6 @@ class OperationCostCalculator:
                     "{} troops x {} days".format(
                         "{:,}".format(troops), "{:,}".format(duration)
                     ),
-                    "",
                     "",
                     "",
                     "",
@@ -1470,7 +1664,9 @@ class OperationCostCalculator:
                 "Install dependencies with: python -m pip install Pillow"
             ) from exc
         except ValueError as exc:
-            raise RuntimeError("Could not encode the PDF417 barcode: {}".format(exc)) from exc
+            raise RuntimeError(
+                "Could not encode the PDF417 barcode: {}".format(exc)
+            ) from exc
 
         page_size = landscape(letter)
         page_width, page_height = page_size
@@ -1536,7 +1732,6 @@ class OperationCostCalculator:
                 ]
             )
         )
-
         item_headers = (
             "Item",
             "Category",
@@ -1576,7 +1771,6 @@ class OperationCostCalculator:
             )
         if not self.operation_items:
             table_data.append([cell("No items recorded.")] + [""] * 8)
-
         item_table = LongTable(
             table_data,
             colWidths=(105, 105, 60, 110, 75, 70, 70, 55, 70),
@@ -1591,13 +1785,17 @@ class OperationCostCalculator:
                     ("GRID", (0, 0), (-1, -1), 0.25, colors.lightgrey),
                     ("VALIGN", (0, 0), (-1, -1), "TOP"),
                     ("ALIGN", (4, 1), (-1, -1), "RIGHT"),
-                    ("ROWBACKGROUNDS", (0, 1), (-1, -1), (colors.white, colors.HexColor("#f4f6f8"))),
+                    (
+                    "ROWBACKGROUNDS",
+                    (0, 1),
+                    (-1, -1),
+                    (colors.white, colors.HexColor("#f4f6f8")),
+                    ),
                     ("TOPPADDING", (0, 0), (-1, -1), 4),
                     ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
                 ]
             )
         )
-
         def draw_pdf417(canvas):
             canvas.saveState()
             image_width, image_height = pdf417_image.size
@@ -1622,16 +1820,13 @@ class OperationCostCalculator:
                 mask="auto",
             )
             canvas.restoreState()
-
         class LastPageBarcodeCanvas(Canvas):
             def __init__(self, *args, **kwargs):
                 self._saved_page_states = []
                 super().__init__(*args, **kwargs)
-
             def showPage(self):
                 self._saved_page_states.append(dict(self.__dict__))
                 self._startPage()
-
             def save(self):
                 last_page = len(self._saved_page_states)
                 for page_number, page_state in enumerate(
@@ -1642,7 +1837,6 @@ class OperationCostCalculator:
                         draw_pdf417(self)
                     Canvas.showPage(self)
                 Canvas.save(self)
-
         def draw_page(canvas, document, include_code128):
             canvas.saveState()
             canvas.setTitle(
@@ -1681,13 +1875,10 @@ class OperationCostCalculator:
                 page_width - margin, 28, "Page {}".format(document.page)
             )
             canvas.restoreState()
-
         def draw_first_page(canvas, document):
             draw_page(canvas, document, include_code128=True)
-
         def draw_later_pages(canvas, document):
             draw_page(canvas, document, include_code128=False)
-
         document = SimpleDocTemplate(
             path,
             pagesize=page_size,
@@ -1711,27 +1902,23 @@ class OperationCostCalculator:
             onLaterPages=draw_later_pages,
             canvasmaker=LastPageBarcodeCanvas,
         )
-
     def open_catalog_manager(self):
         if self.manager_window is not None and self.manager_window.winfo_exists():
             self.manager_window.lift()
             self.manager_window.focus_set()
             return
-
         window = tk.Toplevel(self.root)
         self.manager_window = window
         window.title("Price Database & Item Manager")
-        window.geometry("1120x760")
-        window.minsize(850, 620)
+        window.geometry("1120x780")
+        window.minsize(850, 640)
         window.transient(self.root)
-
         frame = ttk.Frame(window, padding=12)
         frame.grid(row=0, column=0, sticky="nsew")
         window.columnconfigure(0, weight=1)
         window.rowconfigure(0, weight=1)
         frame.columnconfigure(0, weight=1)
         frame.rowconfigure(0, weight=1)
-
         columns = (
             "name",
             "category",
@@ -1771,12 +1958,10 @@ class OperationCostCalculator:
         self.catalog_tree.grid(row=0, column=0, columnspan=2, sticky="nsew")
         vertical_scroll.grid(row=0, column=2, sticky="ns")
         horizontal_scroll.grid(row=1, column=0, columnspan=2, sticky="ew")
-
         editor = ttk.LabelFrame(frame, text="Item Details", padding=8)
         editor.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(10, 0))
         for column in (1, 3, 5):
             editor.columnconfigure(column, weight=1)
-
         ttk.Label(editor, text="Item Name:").grid(row=0, column=0, sticky="w", padx=4)
         self.catalog_name = tk.StringVar()
         ttk.Entry(editor, textvariable=self.catalog_name).grid(
@@ -1797,7 +1982,6 @@ class OperationCostCalculator:
             values=("consumable", "weapon", "vehicle", "aircraft"),
             state="readonly",
         ).grid(row=0, column=5, sticky="ew", padx=4, pady=4)
-
         ttk.Label(editor, text="Billing Unit:").grid(row=1, column=0, sticky="w", padx=4)
         self.catalog_unit = tk.StringVar(value="Unit")
         ttk.Entry(editor, textvariable=self.catalog_unit).grid(
@@ -1817,7 +2001,6 @@ class OperationCostCalculator:
         ttk.Entry(editor, textvariable=self.catalog_operating_rate).grid(
             row=1, column=5, sticky="ew", padx=4, pady=4
         )
-
         ttk.Label(editor, text="Operating Rate Unit:").grid(
             row=2, column=0, sticky="w", padx=4
         )
@@ -1845,7 +2028,6 @@ class OperationCostCalculator:
             values=("100 km", "flight hour"),
             state="readonly",
         ).grid(row=2, column=5, sticky="ew", padx=4, pady=4)
-
         ttk.Label(editor, text="Fuel Price Catalog Item:").grid(
             row=3, column=0, sticky="w", padx=4
         )
@@ -1860,7 +2042,6 @@ class OperationCostCalculator:
             editor,
             text="Fuel costs use the selected item's CAD price per litre.",
         ).grid(row=3, column=4, columnspan=2, sticky="w", padx=4)
-
         self._refresh_catalog_fuel_choices()
         controls = ttk.Frame(frame)
         controls.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(10, 0))
@@ -1876,9 +2057,8 @@ class OperationCostCalculator:
         ttk.Button(controls, text="Clear Fields", command=self._clear_catalog_fields).pack(
             side="left"
         )
-
         report_settings = ttk.LabelFrame(
-            frame, text="Report Settings", padding=8
+        frame, text="Report & Appearance Settings", padding=8
         )
         report_settings.grid(
             row=4, column=0, columnspan=3, sticky="ew", pady=(10, 0)
@@ -1894,14 +2074,28 @@ class OperationCostCalculator:
             report_settings,
             text="Stored in settings.json and encoded in the PDF417 barcode.",
         ).grid(row=0, column=2, sticky="w", padx=(4, 12))
+        ttk.Label(report_settings, text="Theme:").grid(
+            row=1, column=0, sticky="w", padx=(0, 8), pady=(6, 0)
+        )
+        self.theme_var = tk.StringVar(value=self.theme_mode)
+        ttk.Combobox(
+            report_settings,
+            textvariable=self.theme_var,
+            values=("light", "dark"),
+            state="readonly",
+            width=18,
+        ).grid(row=1, column=1, sticky="w", padx=(0, 8), pady=(6, 0))
+        ttk.Label(
+            report_settings,
+            text="Switch between classic light mode and dark mode.",
+        ).grid(row=1, column=2, sticky="w", padx=(4, 12), pady=(6, 0))
         ttk.Button(
             report_settings, text="Save Settings", command=self.save_logging_model
-        ).grid(row=0, column=3, sticky="e")
-
+        ).grid(row=1, column=3, sticky="e", pady=(6, 0))
         self.catalog_tree.bind("<<TreeviewSelect>>", self._catalog_selection_changed)
         self._refresh_catalog_tree()
+        self._apply_theme(self.theme_mode)
         window.protocol("WM_DELETE_WINDOW", self._close_catalog_manager)
-
     def _refresh_catalog_fuel_choices(self):
         fuel_names = sorted(
             (
@@ -1913,7 +2107,6 @@ class OperationCostCalculator:
         )
         if self.manager_window is not None and self.manager_window.winfo_exists():
             self.catalog_fuel_combo["values"] = fuel_names
-
     def _refresh_catalog_tree(self):
         if self.manager_window is None or not self.manager_window.winfo_exists():
             return
@@ -1942,7 +2135,6 @@ class OperationCostCalculator:
                     item["fuel_item"],
                 ),
             )
-
     def _catalog_selection_changed(self, _event=None):
         selection = self.catalog_tree.selection()
         if not selection:
@@ -1959,7 +2151,6 @@ class OperationCostCalculator:
             self.catalog_fuel_burn.set(item["fuel_burn"])
             self.catalog_fuel_basis.set(item["fuel_basis"])
             self.catalog_fuel_item.set(item["fuel_item"])
-
     def _selected_catalog_item(self):
         selection = self.catalog_tree.selection()
         if not selection:
@@ -1970,7 +2161,6 @@ class OperationCostCalculator:
             return ordered[index]
         except (ValueError, IndexError):
             return None
-
     def _catalog_form_values(self):
         name = self.catalog_name.get().strip()
         category = self.catalog_category.get().strip()
@@ -2010,7 +2200,6 @@ class OperationCostCalculator:
             raise ValueError(
                 "Operating rate unit does not match the selected item type."
             )
-
         fuel_burn_text = self.catalog_fuel_burn.get().strip()
         fuel_burn = ""
         if fuel_burn_text:
@@ -2063,12 +2252,13 @@ class OperationCostCalculator:
             "fuel_basis": fuel_basis,
             "fuel_item": fuel_item,
         }
-
     def add_catalog_item(self):
         try:
             item = self._catalog_form_values()
         except ValueError as exc:
-            messagebox.showerror("Invalid Catalog Item", str(exc), parent=self.manager_window)
+            messagebox.showerror(
+                "Invalid Catalog Item", str(exc), parent=self.manager_window
+            )
             return
         if any(
             existing["name"].casefold() == item["name"].casefold()
@@ -2082,7 +2272,6 @@ class OperationCostCalculator:
             return
         updated_catalog = self.catalog + [item]
         self._save_catalog_changes(updated_catalog)
-
     def update_catalog_item(self):
         selected = self._selected_catalog_item()
         if selected is None:
@@ -2093,7 +2282,9 @@ class OperationCostCalculator:
         try:
             updated_item = self._catalog_form_values()
         except ValueError as exc:
-            messagebox.showerror("Invalid Catalog Item", str(exc), parent=self.manager_window)
+            messagebox.showerror(
+                "Invalid Catalog Item", str(exc), parent=self.manager_window
+            )
             return
         if any(
             item is not selected
@@ -2119,7 +2310,6 @@ class OperationCostCalculator:
                     copied_item["fuel_item"] = updated_item["name"]
                 updated_catalog.append(copied_item)
         self._save_catalog_changes(updated_catalog)
-
     def delete_catalog_item(self):
         selected = self._selected_catalog_item()
         if selected is None:
@@ -2144,7 +2334,6 @@ class OperationCostCalculator:
         updated_catalog = [item for item in self.catalog if item is not selected]
         self._save_catalog_changes(updated_catalog)
         self._clear_catalog_fields()
-
     def _save_catalog_changes(self, updated_catalog):
         try:
             self._write_catalog(updated_catalog)
@@ -2160,7 +2349,6 @@ class OperationCostCalculator:
         self._refresh_item_choices()
         self._refresh_catalog_fuel_choices()
         self._update_asset_form()
-
     def _clear_catalog_fields(self):
         self.catalog_name.set("")
         self.catalog_category.set("")
@@ -2174,17 +2362,12 @@ class OperationCostCalculator:
         self.catalog_fuel_item.set("")
         if self.catalog_tree.selection():
             self.catalog_tree.selection_remove(*self.catalog_tree.selection())
-
     def _close_catalog_manager(self):
         self.manager_window.destroy()
         self.manager_window = None
-
-
 def main():
     root = tk.Tk()
     OperationCostCalculator(root)
     root.mainloop()
-
-
 if __name__ == "__main__":
     main()

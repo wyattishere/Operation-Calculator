@@ -1,6 +1,6 @@
 [Setup]
 AppName=Operation Cost Calculator
-AppVersion=1.0.01
+AppVersion=1.0.02
 AppPublisher=Sight Vector Studios
 PrivilegesRequired=lowest
 DefaultDirName={localappdata}\Programs\Operation Cost Calculator
