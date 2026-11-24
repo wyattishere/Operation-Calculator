@@ -1,8 +1,9 @@
 Operation Calculator---
 
-Made By: Hodgins W. @wyattishere6940@gmail.com
+Made By: Hodgins W. wyattishere6940@gmail.com
 
 Installation: 
+Open installer_output
 Double Click OperationCostCalculator_Setup.exe
  **Note on Windows SmartScreen:** Because this is an independent, non-profit project without a paid Microsoft code-signing certificate, Windows may display a *"Windows protected your PC"* popup when running the installer. To proceed, click **More info** → **Run anyway**.
 
