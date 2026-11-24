@@ -1,4 +1,5 @@
-('C:\\Operation_Calculator\\build\\OperationCostCalculator\\OperationCostCalculator.pkg',
+('C:\\Users\\wyatt\\OneDrive\\Documents\\GitHub\\Operation '
+ 'Calculator\\SRC\\build\\OperationCostCalculator\\OperationCostCalculator.pkg',
  {'BINARY': True,
   'DATA': True,
   'EXECUTABLE': True,
@@ -10,22 +11,28 @@
   'SYMLINK': False},
  [('pyi-contents-directory _internal', '', 'OPTION'),
   ('PYZ-00.pyz',
-   'C:\\Operation_Calculator\\build\\OperationCostCalculator\\PYZ-00.pyz',
+   'C:\\Users\\wyatt\\OneDrive\\Documents\\GitHub\\Operation '
+   'Calculator\\SRC\\build\\OperationCostCalculator\\PYZ-00.pyz',
    'PYZ'),
   ('struct',
-   'C:\\Operation_Calculator\\build\\OperationCostCalculator\\localpycs\\struct.pyc',
+   'C:\\Users\\wyatt\\OneDrive\\Documents\\GitHub\\Operation '
+   'Calculator\\SRC\\build\\OperationCostCalculator\\localpycs\\struct.pyc',
    'PYMODULE'),
   ('pyimod01_archive',
-   'C:\\Operation_Calculator\\build\\OperationCostCalculator\\localpycs\\pyimod01_archive.pyc',
+   'C:\\Users\\wyatt\\OneDrive\\Documents\\GitHub\\Operation '
+   'Calculator\\SRC\\build\\OperationCostCalculator\\localpycs\\pyimod01_archive.pyc',
    'PYMODULE'),
   ('pyimod02_importers',
-   'C:\\Operation_Calculator\\build\\OperationCostCalculator\\localpycs\\pyimod02_importers.pyc',
+   'C:\\Users\\wyatt\\OneDrive\\Documents\\GitHub\\Operation '
+   'Calculator\\SRC\\build\\OperationCostCalculator\\localpycs\\pyimod02_importers.pyc',
    'PYMODULE'),
   ('pyimod03_ctypes',
-   'C:\\Operation_Calculator\\build\\OperationCostCalculator\\localpycs\\pyimod03_ctypes.pyc',
+   'C:\\Users\\wyatt\\OneDrive\\Documents\\GitHub\\Operation '
+   'Calculator\\SRC\\build\\OperationCostCalculator\\localpycs\\pyimod03_ctypes.pyc',
    'PYMODULE'),
   ('pyimod04_pywin32',
-   'C:\\Operation_Calculator\\build\\OperationCostCalculator\\localpycs\\pyimod04_pywin32.pyc',
+   'C:\\Users\\wyatt\\OneDrive\\Documents\\GitHub\\Operation '
+   'Calculator\\SRC\\build\\OperationCostCalculator\\localpycs\\pyimod04_pywin32.pyc',
    'PYMODULE'),
   ('pyiboot01_bootstrap',
    'C:\\Users\\wyatt\\AppData\\Roaming\\Python\\Python315\\site-packages\\PyInstaller\\loader\\pyiboot01_bootstrap.py',
@@ -43,7 +50,8 @@
    'C:\\Users\\wyatt\\AppData\\Roaming\\Python\\Python315\\site-packages\\PyInstaller\\hooks\\rthooks\\pyi_rth__tkinter.py',
    'PYSOURCE'),
   ('operation-calculator',
-   'C:\\Operation_Calculator\\operation-calculator.py',
+   'C:\\Users\\wyatt\\OneDrive\\Documents\\GitHub\\Operation '
+   'Calculator\\SRC\\operation-calculator.py',
    'PYSOURCE')],
  'python315.dll',
  True,

@@ -1,4 +1,5 @@
-('C:\\Operation_Calculator\\build\\OperationCostCalculator\\PYZ-00.pyz',
+('C:\\Users\\wyatt\\OneDrive\\Documents\\GitHub\\Operation '
+ 'Calculator\\SRC\\build\\OperationCostCalculator\\PYZ-00.pyz',
  [('PIL', 'C:\\Python315\\Lib\\site-packages\\PIL\\__init__.py', 'PYMODULE'),
   ('PIL.AvifImagePlugin',
    'C:\\Python315\\Lib\\site-packages\\PIL\\AvifImagePlugin.py',
