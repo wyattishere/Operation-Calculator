@@ -121,7 +121,7 @@ SELECTION_CATEGORIES = (
     "Fuel",
     "Tactical Devices",
     "Snipers/Marksman Rifles/Rifles/Handguns",
-    "Grenade Launchers / Rocket Launchers (Karl Gustaf)",
+    "Grenade Launchers / Rocket Launchers ",
     "Artillery",
     "Air Vehicles",
     "Ground Vehicles",
